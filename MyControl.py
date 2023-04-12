@@ -141,7 +141,7 @@ class MyMenuVideoYellowLabel(QLabel):
 
 
 class MyMenuVideoLabel(QLabel):
-    def __init__(self, picture, x, y, w, h, video, parent):
+    def __init__(self, picture, x, y, w, h, parent):
         # 这是一个播放展示视频的控件，control是那个控制它的元件
         QLabel.__init__(self, parent)
         # control表示的是这个控件的提示信息控件
@@ -154,10 +154,6 @@ class MyMenuVideoLabel(QLabel):
         # self.control=MyMenuVideoControl(x+140,y+70,40,40,self,video,parent)
         # self.yellow_label=MyMenuVideoYellowLabel(x,y,w,h,self.control,parent)
         # self.control.raise_()
-
-    def enterEvent(self, event):
-        # self.yellow_label.setVisible(True)
-        i = 1
 
 
 class double_photo_show_label(QLabel):

@@ -12,12 +12,11 @@ import os
 import PySide2
 import datetime
 import firstSource
-import matplotlib
-import matplotlib.pyplot as plt
 import secondSource
 from PySide2.QtGui import QMovie
 import sys
-matplotlib.use('agg')
+import numpy as np
+import requests
 sys.path.append('deploy')
 
 
@@ -26,13 +25,33 @@ plugin_path = os.path.join(dirname, 'plugins', 'platforms')
 os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 os.environ['PYTHON_EXE'] = sys.executable
 
-TEST_IP = '172.20.215.217:8000'
+TEST_IP = 'http://127.0.0.1:8000/'
 INTERVAL_SECOND = 20
-ALL_NUM_FRAME = 300
+ALL_NUM_FRAME = 30
 
 INIT_SHOW_INFO = '请将人脸置于屏幕中央'
 WAIT_RESULT_BACK = '正在检测中，请稍后'
 ERROR_READ_CAMERA = '摄像头读取失败'
+
+WARNING_ANTI_LIST = [
+    '警告，疑似为照片或打印照片攻击，请重新进行识别或储存',
+    '警告，疑似为贴纸或掩码攻击，请重新进行识别或储存',
+    '警告，疑似为视频播放攻击，请重新进行识别或储存',
+    '警告，疑似为3D面具攻击，请重新进行识别或储存',
+]
+DEEPFAKE_WARNING = '警告，疑似为AI换脸等深度造假攻击'
+
+URL_LIST = {
+    'save': TEST_IP+'save_embedding',
+    'find': TEST_IP+'find_embedding',
+    'anti': TEST_IP+'get_face_anti',
+    'land': TEST_IP+'get_landmark_parsing',
+    'deepfake': TEST_IP+'get_deepfake',
+}
+
+SUCCESS_INFO_DETECT = '成功实现检测'
+SUCCESS_INFO_SAVE = '成功实现存储'
+PERSON_NAME_TIP = '人物名称为'
 
 
 class status():
@@ -69,34 +88,30 @@ class status():
             0, 0, 0, 0.06 * 255), self.ui.widget1, self.ui.widget1_2)
         self.help_set_shadow(-10, 10, 30, QColor(0, 0, 0, 0.06 * 255), self.ui.widget, self.ui.widget_3,
                              self.ui.widget_4, self.ui.widget_5, self.ui.widget_6, self.ui.widget_7, self.ui.widget_8)
-        test_video = r"C:\Users\Administrator\Desktop\university\d4199e42f744cbe3be7f5ac262cd9056.mp4"
         label1 = MyMenuVideoLabel(
-            "source/second/menu_car.PNG", 360+(578-360), 228, 320, 180, test_video, self.ui)
+            "source/second/menu_car.PNG", 360+(578-360), 228, 320, 180, self.ui)
         label2 = MyMenuVideoLabel(
-            "source/second/menu_pedestrian.PNG", 800+(578-360), 228, 320, 180, test_video, self.ui)
+            "source/second/menu_pedestrian.PNG", 800+(578-360), 228, 320, 180, self.ui)
 
         self.ui.show()
         self.ui.pushButton.clicked.connect(self.save_person)
         self.ui.pushButton_2.clicked.connect(self.detect_person)
 
     def save_person(self):
-        self.page_id = 2
-        self.universe_for_one_small("car_one_photo.ui")
-        self.is_draw_line = ''
+        self.page_id = 'save'
+        self.universe_for_one_small("image_save.ui")
         self.come_back = self.handleCalc
         self.ui.pushButton_13.clicked.connect(self.come_back)
 
     def detect_person(self):
-        self.page_id = 2
-        self.universe_for_one_small("car_one_photo.ui")
-        self.is_draw_line = ''
+        self.page_id = 'detect'
+        self.universe_for_one_small("image_detect.ui")
         self.come_back = self.handleCalc
         self.ui.pushButton_13.clicked.connect(self.come_back)
 
     def universe_for_one_small(self, first_ui):
         self.show_ui(first_ui)
         self.file_path = []
-        self.is_draw_line = ''
         # 先设置shadow
         self.have_show_video = 1
         self.help_set_shadow(0, 4, 0, QColor(
@@ -112,6 +127,9 @@ class status():
         self.ui.label_34.setAlignment(Qt.AlignCenter)
         self.ui.label_34.setFont(QFont("Roman times", 20, QFont.Bold))
         self.ui.label_34.setText(INIT_SHOW_INFO)
+        if self.page_id == 'save':
+            self.ui.textEdit.setAlignment(Qt.AlignCenter)
+            self.ui.textEdit.setFont(QFont("Roman times", 14, QFont.Bold))
 
     def stop_video(self):
         try:
@@ -148,6 +166,7 @@ class status():
         self.timer_camera.start(INTERVAL_SECOND)
         self.ui.pushButton_addVideo.setVisible(False)
         self.ui.label_24.setVisible(False)
+        self.ui.label_34.setText(INIT_SHOW_INFO)
 
     def OpenFrame(self):
         ret, frame = self.cap.read()
@@ -203,14 +222,56 @@ class status():
         controller.setPixmap(QtGui.QPixmap(Q_img))
         controller.setScaledContents(True)
 
-    def get_result(self, model_name, img):
-        with ModelClient(TEST_IP, model_name) as client:
-            result_dict = client.infer_batch(img)
-        return result_dict    
+    def get_result(self, model_name, img, name=None):
+        res = requests.post(URL_LIST[model_name],
+                            json={"image": img.tolist(), 'name': name})
+        return res.json()
+
+    def deal_mul_img(self):
+        return np.array([self.frame_list[ALL_NUM_FRAME-1]])
 
     def deal_result(self):
         # self.get_result('')
-        
+        # test_image = cv2.imread('./000168.jpg')
+        if self.page_id == 'save':
+            person_name = self.ui.textEdit.toPlainText()
+            print('input name is', person_name)
+        show_info = ''
+        anti_score = self.get_result(
+            'anti', self.deal_mul_img())['score']
+        anti_score = anti_score[0]
+        deep_score = self.get_result(
+            'deepfake', self.deal_mul_img())['score']
+        deep_score = deep_score[0]
+        if anti_score != 0:
+            show_info += WARNING_ANTI_LIST[anti_score-1]
+            self.ui.label_34.setText(show_info)
+            self.stop_video()
+            return
+        if deep_score > 0.73:
+            show_info += DEEPFAKE_WARNING
+            self.ui.label_34.setText(show_info)
+            self.stop_video()
+            return
+
+        if self.page_id == 'save':
+            self.get_result(
+                'save', self.frame_list[ALL_NUM_FRAME-1], person_name)
+            show_info += SUCCESS_INFO_SAVE+'\n'
+        else:
+            res = self.get_result('find', self.frame_list[ALL_NUM_FRAME-1])
+            show_info += SUCCESS_INFO_DETECT+'\n'
+            person_name = res['result']
+        show_info += PERSON_NAME_TIP+f':{person_name}'
+        self.ui.label_34.setText(show_info)
+        land_parse = self.get_result('land', self.frame_list[ALL_NUM_FRAME-1])
+        print(np.array(land_parse['landmark_image'], dtype=np.uint8).shape)
+        self.Display_Image(
+            np.array(land_parse['landmark_image'], dtype=np.uint8), self.ui.label_35)
+        self.Display_Image(
+            cv2.resize(np.array(land_parse['parsing_image'], dtype=np.uint8), (224, 224)), self.ui.label_33)
+
+        self.stop_video()
         pass
 
 
